@@ -1,4 +1,10 @@
 <?php
+if (!class_exists('PDO')) {
+    http_response_code(500);
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>Sentinel AI setup required</title><style>body{font-family:system-ui;max-width:720px;margin:70px auto;padding:24px;color:#101828}code{display:block;background:#f2f4f7;padding:14px;border-radius:8px;margin:16px 0}</style></head><body><h1>One local PHP extension is missing</h1><p>Sentinel AI needs PDO with SQLite to store leads locally. Your PHP installation does not have PDO loaded.</p><code>sudo dnf install php-pdo php-sqlite3 php-xml</code><p>Restart the PHP server after installing the packages, then reload this page.</p></body></html>';
+    exit;
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -20,7 +26,7 @@ if (!isset($_SESSION['commander_chat'])) {
     $_SESSION['commander_chat'] = [
         [
             'sender' => 'sdr',
-            'message' => 'Hello! I am your AI SDR Commander. Tell me what kind of businesses you want to target (e.g. "Find me 3 dental clinics in Boston") and I will start searching, qualifying, and contacting them immediately!'
+            'message' => 'I can find and qualify real businesses from public websites, then prepare outreach drafts for your review. Tell me what kind of businesses you want to target (for example: "Find 3 dental clinics in Boston").'
         ]
     ];
 }
@@ -38,7 +44,7 @@ function runSdrCycle(string $industry, string $location, int $limit, int $thresh
 {
     global $discoveryEngine, $qualificationEngine, $outreachService, $conversationEngine, $leadModel;
     $cycleLogs = [];
-    $cycleLogs[] = "🚀 Starting Autonomous SDR Cycle...";
+        $cycleLogs[] = "🚀 Starting real lead research...";
     $cycleLogs[] = "🔍 Targeting Industry: '{$industry}' | Location: '{$location}' | Min Score: {$threshold}";
     
     // 1. Discovery
@@ -48,7 +54,7 @@ function runSdrCycle(string $industry, string $location, int $limit, int $thresh
     foreach ($discovered as $biz) {
         $leadId = $biz['id'];
         $cycleLogs[] = "--------------------------------------------------";
-        $cycleLogs[] = "💼 Business: <strong>" . htmlspecialchars($biz['business_name']) . "</strong> | Website: {$biz['website_url']}";
+        $cycleLogs[] = "💼 Business: <strong>" . htmlspecialchars($biz['business_name']) . "</strong> | Website: " . htmlspecialchars($biz['website_url']);
         
         // 2. Website Intel & Qualification
         $qualification = $qualificationEngine->qualify($leadId);
@@ -74,36 +80,14 @@ function runSdrCycle(string $industry, string $location, int $limit, int $thresh
         $email = $outreachService->generateMessage($leadId, 'friendly', $findings);
         if ($email) {
             $cycleLogs[] = "✉️ Outreach email drafted successfully.";
-            $leadModel->updateStatus($leadId, 'Outreach Sent');
+            $leadModel->updateStatus($leadId, 'Outreach Drafted');
             
-            // Mark outreach message status as Sent
-            $outreachService->saveMessage($leadId, 'friendly', $email);
-            $db = Database::getConnection();
-            $db->prepare('UPDATE outreach_messages SET status = "Sent" WHERE lead_id = :lead_id')->execute([':lead_id' => $leadId]);
-            $cycleLogs[] = "🚀 Outreach email dispatched to decision maker: <em>" . htmlspecialchars($biz['contact_name'] ?: 'Owner') . "</em>";
-            
-            // 4. Simulate Prospect Response
-            $simulatedResponses = [
-                "Hey! Thanks for reaching out. Yes, our page loading speed has been a bit slow lately. What are your pricing plans? Can we schedule a call?",
-                "Hi, I saw your comments about our accessibility compliance. Let's arrange a brief discussion next Tuesday afternoon.",
-                "Hello, we know our conversion rate is low. Do you have a calendar link where we can schedule a quick 10-minute demo?"
-            ];
-            $prospectMsg = $simulatedResponses[array_rand($simulatedResponses)];
-            $cycleLogs[] = "📥 Inbound email received: \"$prospectMsg\"";
-            
-            // 5. Conversation Engine handling
-            $reply = $conversationEngine->respondToProspect($leadId, $prospectMsg);
-            $cycleLogs[] = "📤 AI SDR Sent Reply: \"$reply\"";
-            
-            $updatedLead = $leadModel->getById($leadId);
-            if ($updatedLead['handover_status'] === 'Pending') {
-                $cycleLogs[] = "🚨 <strong>Buying Intent Detected!</strong> Escated to Human Inbox.";
-            }
+            $cycleLogs[] = "📝 Outreach saved as a draft for owner review. No email was sent and no prospect response was fabricated.";
         }
     }
     
     $cycleLogs[] = "--------------------------------------------------";
-    $cycleLogs[] = "✅ Autonomous SDR Cycle completed.";
+    $cycleLogs[] = "✅ Research completed. No email was sent automatically.";
     return $cycleLogs;
 }
 
@@ -156,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_chat'])) {
 
                 $aiReply = "Roger that! I successfully executed an autonomous cycle for **$parsedIndustry** in **$parsedLocation** (Limit: $limit).\n\n" . 
                            $parsed['reply_message'] . "\n\n" .
-                           "You can view the detailed step-by-step logs under the **SDR Logs** tab. The discovered leads have been updated below in the prospect lists.";
+                           "Review the detailed logs and outreach drafts before contacting anyone.";
             } else {
                 $aiReply = $parsed['reply_message'] ?? "I'm on it! Let me know if you'd like me to start target search crawl cycle.";
             }
@@ -195,7 +179,7 @@ $totalQualified = count(array_filter($leads, function($l) {
     return $l['status'] === 'Qualified';
 }));
 $totalOutreach = count(array_filter($leads, function($l) {
-    return $l['status'] === 'Outreach Sent' || $l['status'] === 'In Conversation' || $l['status'] === 'Qualified';
+    return in_array($l['status'], ['Outreach Drafted', 'Outreach Sent', 'In Conversation', 'Qualified'], true);
 }));
 
 $activeTab = $_GET['tab'] ?? 'chat';
@@ -333,7 +317,7 @@ $activeTab = $_GET['tab'] ?? 'chat';
             <div class="stat-card">
                 <span class="stat-icon">✉️</span>
                 <div class="stat-info">
-                    <h3>Outreach Sent</h3>
+                    <h3>Outreach Activity</h3>
                     <p class="stat-number"><?= $totalOutreach ?></p>
                 </div>
             </div>
@@ -346,7 +330,7 @@ $activeTab = $_GET['tab'] ?? 'chat';
             </div>
         </section>
 
-        <!-- Configuration & Live Simulation Panel -->
+        <!-- Configuration & live research panel -->
         <section class="two-column">
             <!-- Targeting Configuration -->
             <div class="panel config-panel">
@@ -361,15 +345,15 @@ $activeTab = $_GET['tab'] ?? 'chat';
                     <label>Min Qualification Score (0-100)
                         <input type="number" name="min_score" min="0" max="100" value="<?= $minScore ?>" required>
                     </label>
-                    <button type="submit" name="run_cycle" class="button button-primary run-btn">⚡ Run Autonomous SDR Cycle</button>
+                    <button type="submit" name="run_cycle" class="button button-primary run-btn">⚡ Research real prospects</button>
                 </form>
             </div>
 
             <!-- Tabbed Panel (Chatbot vs Logs) -->
             <div class="panel log-panel">
                 <div class="tab-headers">
-                    <button type="button" class="tab-btn <?= $activeTab === 'chat' ? 'active' : '' ?>" onclick="switchTab('chat')">💬 SDR Commander Chat</button>
-                    <button type="button" class="tab-btn <?= $activeTab === 'logs' ? 'active' : '' ?>" onclick="switchTab('logs')">📜 SDR Logs</button>
+            <button type="button" class="tab-btn <?= $activeTab === 'chat' ? 'active' : '' ?>" onclick="switchTab('chat', this)">💬 SDR Commander Chat</button>
+            <button type="button" class="tab-btn <?= $activeTab === 'logs' ? 'active' : '' ?>" onclick="switchTab('logs', this)">📜 SDR Logs</button>
                 </div>
 
                 <!-- Tab 1: Commander Chatbot -->
@@ -507,14 +491,14 @@ $activeTab = $_GET['tab'] ?? 'chat';
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        function switchTab(tabId) {
+        function switchTab(tabId, button) {
             // Hide all contents
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 
             // Show active
             document.getElementById('tab-' + tabId).classList.add('active');
-            event.target.classList.add('active');
+            button.classList.add('active');
 
             // Scroll if needed
             if (tabId === 'logs' && logs) {

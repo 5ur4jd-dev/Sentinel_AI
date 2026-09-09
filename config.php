@@ -22,7 +22,16 @@ return array_merge(
         'DB_PASS' => '',
         'AI_PROVIDER' => 'openrouter',
         'OPENROUTER_API_KEY' => '',
+        'OPENROUTER_MODEL' => 'openai/gpt-4o-mini',
+        'AI_TIMEOUT' => '45',
         'NVIDIA_API_KEY' => '',
+        'MAIL_FROM' => '',
+        'SMTP_HOST' => '',
+        'SMTP_PORT' => '587',
+        'SMTP_USER' => '',
+        'SMTP_PASS' => '',
+        'SMTP_SECURE' => 'tls',
+        'INBOUND_WEBHOOK_TOKEN' => '',
     ],
     $env
 );

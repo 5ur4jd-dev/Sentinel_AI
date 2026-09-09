@@ -24,6 +24,11 @@ class AuditService
             'error' => null,
         ];
 
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array(strtolower((string)parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+            $snapshot['error'] = 'Only valid HTTP and HTTPS website URLs are supported.';
+            return $snapshot;
+        }
+
         $start = microtime(true);
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -31,7 +36,9 @@ class AuditService
         curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
         curl_setopt($ch, CURLOPT_HEADER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'SentinelAI Website Auditor/1.0');
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         $response = curl_exec($ch);
         $info = curl_getinfo($ch);
         $error = curl_error($ch);
@@ -45,7 +52,7 @@ class AuditService
 
         $headerSize = $info['header_size'];
         $snapshot['headers'] = $this->parseHeaders(substr($response, 0, $headerSize));
-        $snapshot['html'] = substr($response, $headerSize);
+        $snapshot['html'] = substr($response, $headerSize, 2000000);
         $snapshot['status'] = 'ok';
 
         return $snapshot;
@@ -79,7 +86,9 @@ class AuditService
         $rawAudit = $this->aiClient->generateStructuredJson((string)$leadId, $systemPrompt, $userPrompt . "\nWebsite HTML:\n" . $snapshot['html'] . "\nExtracted text:\n" . $leadText, $instructions);
 
         if ($rawAudit === null) {
-            return ['success' => false, 'snapshot' => $snapshot, 'audit' => null, 'error' => 'AI audit failed or returned malformed JSON'];
+            // A real, deterministic audit is still useful when no AI key is configured.
+            // Every finding below is derived from the fetched page, never invented.
+            $rawAudit = $this->buildLocalAudit($document = $parsed, $snapshot, $leadText);
         }
 
         $audit['findings'] = $rawAudit['findings'] ?? [];
@@ -89,6 +98,75 @@ class AuditService
         $this->saveBusinessSummary($leadId, $summary);
 
         return ['success' => true, 'snapshot' => $snapshot, 'audit' => $audit, 'summary' => $summary];
+    }
+
+    private function buildLocalAudit($document, array $snapshot, string $text): array
+    {
+        if (!class_exists('DOMDocument') || !($document instanceof DOMDocument)) {
+            $html = (string)$document;
+            $findings = [];
+            $has = static fn(string $pattern): bool => preg_match($pattern, $html) === 1;
+            if (!$has('/<title\\b[^>]*>\\s*[^<]+\\s*<\\/title>/i')) {
+                $findings[] = ['category' => 'SEO', 'observation' => 'The page has no HTML title.', 'evidence' => 'No non-empty <title> element was found in the fetched document.', 'impact' => 'Search engines and browser tabs have no clear page label.'];
+            }
+            if (!$has('/<meta\\b[^>]*name=["\\\']description["\\\'][^>]*content=["\\\'][^"\\\']+["\\\']/i')) {
+                $findings[] = ['category' => 'SEO', 'observation' => 'The page has no meta description.', 'evidence' => 'No meta[name="description"] element was found.', 'impact' => 'Search results may use unsuitable page text as the snippet.'];
+            }
+            if (!$has('/<meta\\b[^>]*name=["\\\']viewport["\\\']/i')) {
+                $findings[] = ['category' => 'Responsive design', 'observation' => 'The page does not declare a viewport.', 'evidence' => 'No meta[name="viewport"] element was found.', 'impact' => 'Mobile browsers may render the page at a desktop layout width.'];
+            }
+            $h1Count = preg_match_all('/<h1\\b/i', $html);
+            if ($h1Count === 0) {
+                $findings[] = ['category' => 'Accessibility and structure', 'observation' => 'The page has no primary H1 heading.', 'evidence' => 'The fetched document contains zero h1 elements.', 'impact' => 'The page hierarchy is less clear to users and assistive technology.'];
+            }
+            if (!$has('/(?:href|action)=["\\\'][^"\\\']*(?:contact|book|schedule)[^"\\\']*["\\\']/i')) {
+                $findings[] = ['category' => 'Conversion', 'observation' => 'No obvious contact, booking, or scheduling link was found.', 'evidence' => 'Links and form actions did not include contact, booking, or scheduling paths.', 'impact' => 'Interested visitors have no clearly discoverable next step.'];
+            }
+            if ($findings === []) {
+                $findings[] = ['category' => 'Baseline', 'observation' => 'The fetched page contains the basic signals checked by this audit.', 'evidence' => "HTTP response time was {$snapshot['response_time_ms']} ms; structural checks passed.", 'impact' => 'Run a deeper performance or conversion review for additional opportunities.'];
+            }
+            return ['findings' => $findings, 'business_summary' => sprintf('Local audit completed from the fetched HTML (%d bytes, %d ms response time).', strlen($snapshot['html']), $snapshot['response_time_ms'] ?? 0)];
+        }
+        $xpath = new DOMXPath($document);
+        $findings = [];
+        $title = trim((string)($xpath->evaluate('string(//title)')));
+        $description = trim((string)($xpath->evaluate('string(//meta[translate(@name,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="description"]/@content)')));
+        $viewport = $xpath->evaluate('count(//meta[translate(@name,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="viewport"])') > 0;
+        $h1Count = (int)$xpath->evaluate('count(//h1)');
+        $links = $xpath->query('//a[@href]');
+        $hasContactLink = false;
+        foreach ($links as $link) {
+            $href = strtolower((string)$link->getAttribute('href'));
+            $label = strtolower(trim($link->textContent));
+            if (str_contains($href, 'contact') || str_contains($href, 'book') || str_contains($href, 'schedule') || str_contains($label, 'contact') || str_contains($label, 'book')) {
+                $hasContactLink = true;
+                break;
+            }
+        }
+
+        if ($title === '') {
+            $findings[] = ['category' => 'SEO', 'observation' => 'The page has no HTML title.', 'evidence' => 'No <title> element was found in the fetched document.', 'impact' => 'Search engines and browser tabs have no clear page label.'];
+        }
+        if ($description === '') {
+            $findings[] = ['category' => 'SEO', 'observation' => 'The page has no meta description.', 'evidence' => 'No meta[name="description"] element was found.', 'impact' => 'Search results may use unsuitable page text as the snippet.'];
+        }
+        if (!$viewport) {
+            $findings[] = ['category' => 'Responsive design', 'observation' => 'The page does not declare a viewport.', 'evidence' => 'No meta[name="viewport"] element was found.', 'impact' => 'Mobile browsers may render the page at a desktop layout width.'];
+        }
+        if ($h1Count === 0) {
+            $findings[] = ['category' => 'Accessibility and structure', 'observation' => 'The page has no primary H1 heading.', 'evidence' => 'The fetched document contains zero h1 elements.', 'impact' => 'The page hierarchy is less clear to users and assistive technology.'];
+        } elseif ($h1Count > 1) {
+            $findings[] = ['category' => 'Accessibility and structure', 'observation' => 'The page contains multiple H1 headings.', 'evidence' => "The fetched document contains {$h1Count} h1 elements.", 'impact' => 'A noisy heading hierarchy can weaken page comprehension and SEO signals.'];
+        }
+        if (!$hasContactLink) {
+            $findings[] = ['category' => 'Conversion', 'observation' => 'No obvious contact, booking, or scheduling link was found.', 'evidence' => 'Visible links and href values did not include contact, booking, or scheduling paths.', 'impact' => 'Interested visitors have no clearly discoverable next step.'];
+        }
+        if ($findings === []) {
+            $findings[] = ['category' => 'Baseline', 'observation' => 'The fetched page contains the basic signals checked by this audit.', 'evidence' => "HTTP response time was {$snapshot['response_time_ms']} ms; title, description, viewport, heading, and contact-link checks passed.", 'impact' => 'Run a deeper performance or conversion review for additional opportunities.'];
+        }
+
+        $summary = sprintf('Local audit completed from the fetched HTML (%d bytes, %d ms response time).', strlen($snapshot['html']), $snapshot['response_time_ms'] ?? 0);
+        return ['findings' => $findings, 'business_summary' => $summary];
     }
 
     private function saveAudit(int $leadId, string $html, array $findings, string $summary): void
@@ -144,8 +222,11 @@ class AuditService
         return $headers;
     }
 
-    private function parseHtml(string $html): DOMDocument
+    private function parseHtml(string $html)
     {
+        if (!class_exists('DOMDocument')) {
+            return $html;
+        }
         libxml_use_internal_errors(true);
         $document = new DOMDocument();
         $document->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR);
@@ -153,8 +234,16 @@ class AuditService
         return $document;
     }
 
-    private function extractText(DOMDocument $document): string
+    private function extractText($document): string
     {
+        if (!class_exists('DOMDocument') || !($document instanceof DOMDocument)) {
+            $text = preg_replace('/<(script|style|title)\\b[^>]*>.*?<\\/\\1>/is', '', (string)$document);
+            $text = preg_replace('/<\\/?(?:address|article|aside|blockquote|br|div|dl|fieldset|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tr|ul)\\b[^>]*>/i', "\n", $text);
+            $text = strip_tags($text);
+            $lines = preg_split('/\\R+/', $text);
+            $lines = array_values(array_filter(array_map(static fn($line) => trim(preg_replace('/\\s+/', ' ', $line)), $lines), static fn($line) => $line !== ''));
+            return implode("\n", $lines);
+        }
         $xpath = new DOMXPath($document);
         $nodes = $xpath->query('//body//*[not(self::script) and not(self::style)]');
         $text = [];

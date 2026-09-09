@@ -4,11 +4,13 @@ require_once __DIR__ . '/../Leads/LeadModel.php';
 require_once __DIR__ . '/../Audit/AuditService.php';
 require_once __DIR__ . '/../Outreach/OutreachService.php';
 require_once __DIR__ . '/../AI/ConversationEngine.php';
+require_once __DIR__ . '/../AI/QualificationEngine.php';
 
 $leadModel = new LeadModel();
 $auditService = new AuditService();
 $outreachService = new OutreachService();
 $conversationEngine = new ConversationEngine();
+$qualificationEngine = new QualificationEngine();
 
 $errors = [];
 $lead = null;
@@ -20,18 +22,7 @@ if (isset($_GET['id'])) {
     $leadId = (int)$_GET['id'];
     $lead = $leadModel->getById($leadId);
     if ($lead) {
-        // Handle incoming prospect response simulator
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['simulate_reply'])) {
-            $msg = trim($_POST['prospect_reply'] ?? '');
-            if ($msg !== '') {
-                $conversationEngine->respondToProspect($leadId, $msg);
-                header('Location: lead.php?id=' . $leadId);
-                exit;
-            } else {
-                $errors[] = 'Simulated message cannot be empty.';
-            }
-        }
-
+        // Record an inbound message supplied by the owner from the real channel.
         // Handle manually overriding the message tone / generating outreach
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_outreach'])) {
             $tone = $_POST['tone'] ?? 'formal';
@@ -48,6 +39,20 @@ if (isset($_GET['id'])) {
             }
         }
 
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['analyze_lead'])) {
+            $analysis = $qualificationEngine->qualify($leadId);
+            if (!$analysis['success']) {
+                $errors[] = $analysis['error'] ?? 'Lead analysis failed.';
+            }
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_outreach'])) {
+            $result = $outreachService->sendMessage($leadId);
+            if (!$result['success']) {
+                $errors[] = $result['error'];
+            }
+        }
+
         $audited = $auditService->getAuditByLeadId($lead['id']);
         $outreach = $outreachService->getByLeadId($lead['id']);
         $conversations = $leadModel->getConversations($lead['id']);
@@ -59,6 +64,7 @@ if (!$lead) {
     exit;
 }
 
+$lead = $leadModel->getById($leadId);
 $qualificationDetails = $lead['qualification_details'] ? json_decode($lead['qualification_details'], true) : null;
 ?>
 <!DOCTYPE html>
@@ -150,6 +156,29 @@ $qualificationDetails = $lead['qualification_details'] ? json_decode($lead['qual
                         <?php endif; ?>
                     </section>
                 <?php endif; ?>
+
+                <section class="panel action-panel">
+                    <?php if (!$audited): ?>
+                        <h3>Website analysis</h3>
+                        <p class="small">Fetch the real website and generate evidence-backed qualification data.</p>
+                        <form method="post">
+                            <button type="submit" name="analyze_lead" class="button button-primary">🔍 Analyze this website</button>
+                        </form>
+                    <?php elseif (!$outreach): ?>
+                        <h3>Generate outreach</h3>
+                        <p class="small">Create a draft using the findings above. It will not send automatically.</p>
+                        <form method="post" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+                            <label>Tone
+                                <select name="tone">
+                                    <option value="formal">Formal</option>
+                                    <option value="friendly" selected>Friendly</option>
+                                    <option value="casual">Casual</option>
+                                </select>
+                            </label>
+                            <button type="submit" name="generate_outreach" class="button button-primary">✉ Generate draft</button>
+                        </form>
+                    <?php endif; ?>
+                </section>
             </div>
 
             <!-- Right Column: Conversations & Messaging -->
@@ -159,7 +188,7 @@ $qualificationDetails = $lead['qualification_details'] ? json_decode($lead['qual
                     <h3>Conversation History</h3>
                     <div class="chat-box">
                         <?php if (empty($conversations)): ?>
-                            <p class="placeholder-text">No active conversation yet. The AI SDR has dispatched the initial outreach email below.</p>
+                            <p class="placeholder-text">No inbound conversation yet. The outreach below is still a draft until an owner sends it.</p>
                         <?php else: ?>
                             <div class="conversation-thread">
                                 <?php foreach ($conversations as $msg): ?>
@@ -173,23 +202,21 @@ $qualificationDetails = $lead['qualification_details'] ? json_decode($lead['qual
                         <?php endif; ?>
                     </div>
 
-                    <!-- Simulator Input -->
-                    <div class="simulator-wrapper">
-                        <h4>Inbound Reply Simulator</h4>
-                        <p class="simulator-hint">Type a simulated response from the prospect to test how the AI SDR responds and decides on a human handoff.</p>
-                        <form method="post" class="simulator-form">
-                            <textarea name="prospect_reply" rows="3" placeholder="e.g. Yes, I'm interested. What is your pricing and can we set up a call for next week?" required></textarea>
-                            <button type="submit" name="simulate_reply" class="button button-accent">📥 Send Simulated Reply</button>
-                        </form>
-                    </div>
+                    <!-- Inbound message entry -->
+                    <p class="inbound-hint">Inbound replies are processed through <code>public/inbound.php</code>. Configure your email provider webhook to send real messages there.</p>
                 </section>
 
                 <!-- Initial Outreach Block -->
-                <?php if ($outreach): ?>
+                    <?php if ($outreach): ?>
                     <section class="panel outreach-panel">
                         <h3>Initial Personalised Outreach</h3>
                         <p><strong>Channel:</strong> Email (SDR Primary) | <strong>Status:</strong> <?= htmlspecialchars($outreach['status']) ?></p>
                         <pre class="outreach-message"><?= htmlspecialchars($outreach['message']) ?></pre>
+                        <?php if ($outreach['status'] !== 'Sent'): ?>
+                            <form method="post" style="margin-top: 12px;">
+                                <button type="submit" name="send_outreach" class="button button-accent">✉ Send this email</button>
+                            </form>
+                        <?php endif; ?>
                     </section>
                 <?php endif; ?>
 

@@ -69,4 +69,99 @@ class OutreachService
         $statement = $this->db->prepare('UPDATE outreach_messages SET message = :message, status = :status WHERE lead_id = :lead_id');
         return $statement->execute([':message' => $message, ':status' => $status, ':lead_id' => $leadId]);
     }
+
+    /** Send the approved draft through the server's configured mail transport. */
+    public function sendMessage(int $leadId): array
+    {
+        $statement = $this->db->prepare('SELECT l.*, o.message, o.status AS outreach_status FROM leads l JOIN outreach_messages o ON o.lead_id = l.id WHERE l.id = :lead_id');
+        $statement->execute([':lead_id' => $leadId]);
+        $row = $statement->fetch();
+        if (!$row) {
+            return ['success' => false, 'error' => 'Outreach draft not found.'];
+        }
+        if (!filter_var($row['contact_email'], FILTER_VALIDATE_EMAIL)) {
+            return ['success' => false, 'error' => 'This lead has no valid contact email.'];
+        }
+        if (trim((string)$row['message']) === '') {
+            return ['success' => false, 'error' => 'Outreach draft is empty.'];
+        }
+        if ($row['outreach_status'] === 'Sent') {
+            return ['success' => false, 'error' => 'This outreach has already been sent.'];
+        }
+
+        $config = require __DIR__ . '/../config.php';
+        $from = trim((string)($config['MAIL_FROM'] ?? ''));
+        if (!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            return ['success' => false, 'error' => 'MAIL_FROM is not configured with a valid email address.'];
+        }
+
+        $subject = 'A quick idea for ' . $row['business_name'];
+        $smtpResult = $this->sendSmtp($config, $from, $row['contact_email'], $subject, $row['message']);
+        if (!$smtpResult['success']) {
+            return ['success' => false, 'error' => $smtpResult['error']];
+        }
+
+        $update = $this->db->prepare('UPDATE outreach_messages SET status = :status WHERE lead_id = :lead_id');
+        $update->execute([':status' => 'Sent', ':lead_id' => $leadId]);
+        $leadUpdate = $this->db->prepare("UPDATE leads SET status = 'Outreach Sent' WHERE id = :lead_id");
+        $leadUpdate->execute([':lead_id' => $leadId]);
+        return ['success' => true];
+    }
+
+    private function sendSmtp(array $config, string $from, string $to, string $subject, string $body): array
+    {
+        $host = trim((string)($config['SMTP_HOST'] ?? ''));
+        $port = (int)($config['SMTP_PORT'] ?? 587);
+        $user = (string)($config['SMTP_USER'] ?? '');
+        $pass = (string)($config['SMTP_PASS'] ?? '');
+        $secure = strtolower((string)($config['SMTP_SECURE'] ?? 'tls'));
+        if ($host === '' || $user === '' || $pass === '') {
+            return ['success' => false, 'error' => 'SMTP_HOST, SMTP_USER, and SMTP_PASS must be configured for local email sending.'];
+        }
+        $transport = $secure === 'ssl' ? 'ssl://' . $host : $host;
+        $socket = @stream_socket_client($transport . ':' . $port, $errno, $error, 15, STREAM_CLIENT_CONNECT);
+        if (!$socket) {
+            return ['success' => false, 'error' => "SMTP connection failed: {$error} ({$errno})"];
+        }
+        stream_set_timeout($socket, 15);
+        $read = function () use ($socket): string {
+            $response = '';
+            while (($line = fgets($socket, 515)) !== false) {
+                $response .= $line;
+                if (isset($line[3]) && $line[3] === ' ') break;
+            }
+            return $response;
+        };
+        $write = function (string $command) use ($socket, $read): bool {
+            fwrite($socket, $command . "\r\n");
+            $response = $read();
+            return isset($response[0]) && $response[0] >= '2' && $response[0] <= '3';
+        };
+        $greeting = $read();
+        if (!str_starts_with($greeting, '2')) { fclose($socket); return ['success' => false, 'error' => 'SMTP server rejected the connection.']; }
+        if (!$write('EHLO localhost')) { fclose($socket); return ['success' => false, 'error' => 'SMTP EHLO failed.']; }
+        if ($secure === 'tls') {
+            fwrite($socket, "STARTTLS\r\n");
+            $startTlsResponse = $read();
+            if (!str_starts_with($startTlsResponse, '2')) { fclose($socket); return ['success' => false, 'error' => 'SMTP STARTTLS was rejected.']; }
+            if (!@stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) { fclose($socket); return ['success' => false, 'error' => 'Could not establish SMTP TLS.']; }
+            if (!$write('EHLO localhost')) { fclose($socket); return ['success' => false, 'error' => 'SMTP EHLO after TLS failed.']; }
+        }
+        if (!$write('AUTH LOGIN') || !$write(base64_encode($user)) || !$write(base64_encode($pass))) {
+            fclose($socket);
+            return ['success' => false, 'error' => 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS.'];
+        }
+        if (!$write('MAIL FROM:<' . $from . '>') || !$write('RCPT TO:<' . $to . '>') || !$write('DATA')) {
+            fclose($socket);
+            return ['success' => false, 'error' => 'SMTP rejected the message envelope.'];
+        }
+        $safeBody = str_replace(["\r\n", "\r"], "\n", $body);
+        $safeBody = preg_replace('/^\./m', '..', $safeBody);
+        $message = 'From: ' . $from . "\r\n" . 'To: ' . $to . "\r\n" . 'Subject: ' . $subject . "\r\n" . 'MIME-Version: 1.0' . "\r\n" . 'Content-Type: text/plain; charset=UTF-8' . "\r\n\r\n" . str_replace("\n", "\r\n", $safeBody) . "\r\n.";
+        fwrite($socket, $message . "\r\n");
+        $accepted = $read();
+        $write('QUIT');
+        fclose($socket);
+        return str_starts_with($accepted, '2') ? ['success' => true] : ['success' => false, 'error' => 'SMTP server rejected the message body.'];
+    }
 }

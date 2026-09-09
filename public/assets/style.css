@@ -205,7 +205,7 @@ body {
 
 .targeting-form input[type='text'],
 .targeting-form input[type='number'],
-.simulator-form textarea {
+.inbound-form textarea {
     width: 100%;
     box-sizing: border-box;
     padding: 14px;
@@ -220,7 +220,7 @@ body {
 }
 
 .targeting-form input:focus,
-.simulator-form textarea:focus {
+.inbound-form textarea:focus {
     border-color: var(--accent);
 }
 
@@ -568,26 +568,26 @@ tbody td {
     margin-top: 6px;
 }
 
-.simulator-wrapper {
+.inbound-wrapper {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     padding: 16px;
     border-radius: 12px;
 }
 
-.simulator-wrapper h4 {
+.inbound-wrapper h4 {
     margin: 0 0 6px;
     font-family: 'Outfit', sans-serif;
     color: var(--badge-accent);
 }
 
-.simulator-hint {
+.inbound-hint {
     font-size: 0.82rem;
     color: var(--text-secondary);
     margin: 0 0 12px;
 }
 
-.simulator-form textarea {
+.inbound-form textarea {
     background: var(--bg-primary);
     border: 1px solid var(--border);
     color: var(--text-primary);

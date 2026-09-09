@@ -32,9 +32,17 @@ class Database
                     self::initializeSqliteSchema(self::$instance);
                 }
             }
+            self::migrateLegacyData(self::$instance);
         }
 
         return self::$instance;
+    }
+
+    private static function migrateLegacyData(PDO $db): void
+    {
+        // These records were created by the old prompt-only discovery flow.
+        // They have no search evidence, so they must not appear as active leads.
+        $db->exec("UPDATE leads SET status = 'Archived', source = 'Legacy unverified discovery' WHERE source LIKE 'Discovery Engine (%'");
     }
 
     private static function initializeSqliteSchema(PDO $db): void
@@ -68,7 +76,7 @@ class Database
                 status TEXT NOT NULL DEFAULT 'Pending',
                 error_message TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
             )",
             "CREATE TABLE IF NOT EXISTS outreach_messages (

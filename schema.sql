@@ -66,3 +66,7 @@ CREATE TABLE IF NOT EXISTS ai_logs (
     error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Useful for local development and prevents the discovery provider from
+-- creating duplicate records for the same website.
+CREATE INDEX idx_leads_website_url ON leads (website_url(255));

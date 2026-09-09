@@ -16,10 +16,10 @@ class AiClient
         $this->db = Database::getConnection();
     }
 
-    public function generateStructuredJson(string $leadId, string $systemPrompt, string $userPrompt, array $instructions, int $maxRetries = 1): ?array
+    public function generateStructuredJson(string $leadId, string $systemPrompt, string $userPrompt, array $instructions, int $maxRetries = 0, bool $enableWebSearch = false, ?array $jsonSchema = null): ?array
     {
         $endpoint = '/chat/completions';
-        $prompt = $this->buildPrompt($systemPrompt, $userPrompt, $instructions);
+        $prompt = $this->buildPrompt($systemPrompt, $userPrompt, $instructions, $enableWebSearch, $jsonSchema);
         $responseBody = null;
 
         for ($attempt = 0; $attempt <= $maxRetries; $attempt++) {
@@ -47,17 +47,29 @@ class AiClient
         return null;
     }
 
-    private function buildPrompt(string $systemPrompt, string $userPrompt, array $instructions): array
+    private function buildPrompt(string $systemPrompt, string $userPrompt, array $instructions, bool $enableWebSearch = false, ?array $jsonSchema = null): array
     {
-        return [
-            'model' => 'gpt-4o-mini',
+        $config = $this->config;
+        $model = $config['OPENROUTER_MODEL'] ?? 'openai/gpt-4o-mini';
+        $payload = [
+            'model' => $model,
             'messages' => [
                 ['role' => 'system', 'content' => $systemPrompt],
                 ['role' => 'user', 'content' => $userPrompt . "\n\n" . implode("\n", $instructions)],
             ],
-            'temperature' => 0.3,
-            'max_tokens' => 1200,
+            'temperature' => 0.2,
+            'max_tokens' => 1600,
         ];
+        if ($enableWebSearch) {
+            $payload['tools'] = [['type' => 'openrouter:web_search']];
+        }
+        if ($jsonSchema !== null) {
+            $payload['response_format'] = [
+                'type' => 'json_schema',
+                'json_schema' => ['name' => 'sentinel_response', 'strict' => true, 'schema' => $jsonSchema],
+            ];
+        }
+        return $payload;
     }
 
     private function parseJson(string $text): ?array
@@ -85,8 +97,8 @@ class AiClient
     {
         $url = 'https://openrouter.ai/api/v1' . $endpoint;
         $apiKey = $this->config['OPENROUTER_API_KEY'];
-        if (($payload['model'] ?? '') === 'gpt-4o-mini') {
-            $payload['model'] = 'openai/gpt-4o-mini';
+        if ($apiKey === '') {
+            return ['success' => false, 'body' => null, 'error' => 'OPENROUTER_API_KEY is not configured'];
         }
         return $this->curlPost($url, $payload, [
             'Authorization: Bearer ' . $apiKey,
@@ -98,7 +110,10 @@ class AiClient
     {
         $url = 'https://api.build.nvidia.com/v1' . $endpoint;
         $apiKey = $this->config['NVIDIA_API_KEY'];
-        if (($payload['model'] ?? '') === 'gpt-4o-mini') {
+        if ($apiKey === '') {
+            return ['success' => false, 'body' => null, 'error' => 'NVIDIA_API_KEY is not configured'];
+        }
+        if (str_starts_with((string)($payload['model'] ?? ''), 'openai/')) {
             $payload['model'] = 'meta/llama-3.1-70b-instruct';
         }
         return $this->curlPost($url, $payload, [
@@ -114,9 +129,12 @@ class AiClient
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        $config = require __DIR__ . '/../config.php';
+        $timeout = max(10, min(90, (int)($config['AI_TIMEOUT'] ?? 45)));
+        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 
         $body = curl_exec($ch);
         $error = curl_error($ch);

@@ -33,8 +33,8 @@ class QualificationEngine
             $this->leadModel->updateStatus($leadId, 'Analyzing');
             $analysis = $this->auditService->analyzeLead($leadId, $lead['website_url']);
             if (!$analysis['success']) {
-                // If live fetching fails, create a mock audit based on AI understanding so the pipeline is robust
-                $auditResult = $this->generateMockAudit($leadId, $lead);
+                $this->leadModel->updateStatus($leadId, 'Archived');
+                return ['success' => false, 'error' => 'Website audit failed: ' . ($analysis['error'] ?? 'unknown error')];
             } else {
                 $auditResult = $this->auditService->getAuditByLeadId($leadId);
             }
@@ -56,14 +56,14 @@ class QualificationEngine
         $raw = $this->aiClient->generateStructuredJson((string)$leadId, $systemPrompt, $userPrompt, $instructions);
 
         if ($raw === null) {
-            // Default qualification if API fails
+            $findingCount = count($findings);
             $raw = [
-                'score' => 70,
-                'key_reasons' => ['Has digital presence', 'Needs conversion optimization', 'Standard local business'],
-                'budget_potential' => 'Medium',
-                'estimated_tech_stack' => ['WordPress', 'Google Analytics'],
-                'decision_maker_role' => 'Business Owner / General Manager',
-                'outreach_strategy' => 'Focus on fixing conversion path on their homepage.'
+                'score' => max(10, min(95, 45 + ($findingCount * 10))),
+                'key_reasons' => ['Score calculated from the live website audit', "{$findingCount} actionable website finding(s) detected"],
+                'budget_potential' => 'Unknown',
+                'estimated_tech_stack' => [],
+                'decision_maker_role' => 'Business Owner / Marketing Lead',
+                'outreach_strategy' => 'Review the evidence-backed website findings with the owner before proposing a fix.'
             ];
         }
 
@@ -77,54 +77,4 @@ class QualificationEngine
         ];
     }
 
-    private function generateMockAudit(int $leadId, array $lead): array
-    {
-        $findings = [
-            [
-                'category' => 'Performance',
-                'observation' => 'Slow page load times due to unoptimized images and heavy scripts.',
-                'evidence' => 'Simulated lighthouse audit shows high time-to-interactive (4.2 seconds).',
-                'impact' => 'Higher bounce rate, lower customer conversions.'
-            ],
-            [
-                'category' => 'SEO',
-                'observation' => 'Missing meta tags and structural semantic elements on main pages.',
-                'evidence' => 'No viewport description or OpenGraph tags present in document head.',
-                'impact' => 'Lower search index visibility for local searches.'
-            ],
-            [
-                'category' => 'Conversion / CTA',
-                'observation' => 'Primary call-to-action button is below-the-fold and low contrast.',
-                'evidence' => 'No prominent contact or scheduling form link visible without scrolling.',
-                'impact' => 'Visitors leave without registering interest or making a call.'
-            ]
-        ];
-
-        $summary = "Apex Business provides specialized services in {$lead['industry']}. The website acts as a static brochure but has minor performance bottlenecks and structural SEO opportunities that limit local visibility.";
-
-        // Save mock audit to DB
-        $db = Database::getConnection();
-        $sql = 'INSERT INTO audits (lead_id, website_snapshot, audit_json, summary, status) VALUES (:lead_id, :website_snapshot, :audit_json, :summary, :status) ON DUPLICATE KEY UPDATE website_snapshot = :website_snapshot_u, audit_json = :audit_json_u, summary = :summary_u, status = :status_u';
-        if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
-            $sql = 'INSERT INTO audits (lead_id, website_snapshot, audit_json, summary, status) VALUES (:lead_id, :website_snapshot, :audit_json, :summary, :status) ON CONFLICT(lead_id) DO UPDATE SET website_snapshot = :website_snapshot_u, audit_json = :audit_json_u, summary = :summary_u, status = :status_u';
-        }
-        $statement = $db->prepare($sql);
-
-        $statement->execute([
-            ':lead_id' => $leadId,
-            ':website_snapshot' => '<html>Mock Snapshot</html>',
-            ':audit_json' => json_encode(['findings' => $findings], JSON_UNESCAPED_UNICODE),
-            ':summary' => $summary,
-            ':status' => 'Complete',
-            ':website_snapshot_u' => '<html>Mock Snapshot</html>',
-            ':audit_json_u' => json_encode(['findings' => $findings], JSON_UNESCAPED_UNICODE),
-            ':summary_u' => $summary,
-            ':status_u' => 'Complete'
-        ]);
-
-        return [
-            'audit_json' => ['findings' => $findings],
-            'summary' => $summary
-        ];
-    }
 }

@@ -13,8 +13,16 @@ class LeadModel
 
     public function getAll(): array
     {
-        $statement = $this->db->query('SELECT * FROM leads ORDER BY created_at DESC');
+        $statement = $this->db->query("SELECT * FROM leads WHERE status <> 'Archived' ORDER BY created_at DESC");
         return $statement->fetchAll();
+    }
+
+    public function getByWebsite(string $websiteUrl): ?array
+    {
+        $statement = $this->db->prepare("SELECT * FROM leads WHERE lower(website_url) = lower(:website_url) AND status <> 'Archived' LIMIT 1");
+        $statement->execute([':website_url' => $websiteUrl]);
+        $lead = $statement->fetch();
+        return $lead ?: null;
     }
 
     public function getById(int $id): ?array
