@@ -178,4 +178,4 @@ PHP · SQLite/MySQL · OpenRouter · cURL · HTML/CSS · Vanilla JavaScript
 
 ## License
 
-Add the license that matches how you want to distribute Sentinel AI.
+Sentinel AI is licensed under the [Apache License 2.0](LICENSE).
