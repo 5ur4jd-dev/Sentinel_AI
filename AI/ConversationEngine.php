@@ -78,14 +78,9 @@ class ConversationEngine
         }
 
         if (empty($reply)) {
-            // Default reply fallback if AI fails
-            if (stripos($prospectMessage, 'yes') !== false || stripos($prospectMessage, 'interested') !== false || stripos($prospectMessage, 'call') !== false || stripos($prospectMessage, 'meeting') !== false) {
-                $reply = "That sounds great! I'll have our human representative get in touch with you shortly to book a convenient time. Looking forward to talking!";
-                $buyingIntent = true;
-                $handoverSummary = "Prospect expressed interest in setting up a call. Business: {$lead['business_name']}. Request: '{$prospectMessage}'";
-            } else {
-                $reply = "Thank you for the update. Let me know if you would be open to scheduling a quick 10-minute call to discuss your website opportunities.";
-            }
+            // Never fabricate a prospect-facing response when the provider is
+            // unavailable. The webhook can safely retry the same message.
+            throw new RuntimeException('AI response was unavailable; inbound message was stored and can be retried.');
         }
 
         // 4. Record AI SDR response

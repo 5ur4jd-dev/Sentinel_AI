@@ -42,5 +42,10 @@ if (!$lead) {
     exit;
 }
 
-$reply = (new ConversationEngine())->respondToProspect((int)$lead['id'], $text);
-echo json_encode(['success' => true, 'lead_id' => (int)$lead['id'], 'reply' => $reply]);
+try {
+    $reply = (new ConversationEngine())->respondToProspect((int)$lead['id'], $text);
+    echo json_encode(['success' => true, 'lead_id' => (int)$lead['id'], 'reply' => $reply]);
+} catch (Throwable $exception) {
+    http_response_code(503);
+    echo json_encode(['error' => $exception->getMessage(), 'lead_id' => (int)$lead['id']]);
+}

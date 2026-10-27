@@ -15,6 +15,11 @@ require_once __DIR__ . '/../AI/QualificationEngine.php';
 require_once __DIR__ . '/../Outreach/OutreachService.php';
 require_once __DIR__ . '/../AI/ConversationEngine.php';
 
+$appConfig = require __DIR__ . '/../config.php';
+$aiConfigured = (($appConfig['AI_PROVIDER'] ?? 'openrouter') === 'nvidia')
+    ? trim((string)($appConfig['NVIDIA_API_KEY'] ?? '')) !== ''
+    : trim((string)($appConfig['OPENROUTER_API_KEY'] ?? '')) !== '';
+
 $leadModel = new LeadModel();
 $discoveryEngine = new DiscoveryEngine();
 $qualificationEngine = new QualificationEngine();
@@ -58,10 +63,15 @@ function runSdrCycle(string $industry, string $location, int $limit, int $thresh
         
         // 2. Website Intel & Qualification
         $qualification = $qualificationEngine->qualify($leadId);
+        if (!$qualification['success']) {
+            $cycleLogs[] = "❌ Qualification failed: " . htmlspecialchars((string)($qualification['error'] ?? 'Unknown error'));
+            continue;
+        }
         $score = $qualification['score'] ?? 0;
         $details = $qualification['details'] ?? [];
         
-        $cycleLogs[] = "📈 AI Qualification Score: <strong>{$score}/100</strong>";
+        $method = (($details['scoring_method'] ?? '') === 'local_audit') ? 'local audit' : 'AI';
+        $cycleLogs[] = "📈 Qualification Score ({$method}): <strong>{$score}/100</strong>";
         
         if (!empty($details['key_reasons'])) {
             $cycleLogs[] = "ℹ️ Reasons: " . implode(', ', $details['key_reasons']);
@@ -138,8 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_chat'])) {
                 $runLogs = runSdrCycle($parsedIndustry, $parsedLocation, $limit, 60);
                 $_SESSION['cycle_logs'] = $runLogs;
 
-                $aiReply = "Roger that! I successfully executed an autonomous cycle for **$parsedIndustry** in **$parsedLocation** (Limit: $limit).\n\n" . 
-                           $parsed['reply_message'] . "\n\n" .
+                $found = count(array_filter($runLogs, static fn($line) => str_contains($line, 'Business:')));
+                $aiReply = "Research completed for $parsedIndustry in $parsedLocation (limit: $limit). " .
+                           "Verified and saved $found lead(s).\n\n" .
+                           ($parsed['reply_message'] ?? '') . "\n\n" .
                            "Review the detailed logs and outreach drafts before contacting anyone.";
             } else {
                 $aiReply = $parsed['reply_message'] ?? "I'm on it! Let me know if you'd like me to start target search crawl cycle.";
@@ -301,7 +313,7 @@ $activeTab = $_GET['tab'] ?? 'chat';
             </div>
             <div class="status-indicator">
                 <span class="pulse-dot"></span>
-                <span>AI SDR Agent: Online & Active</span>
+                <span><?= $aiConfigured ? 'AI provider configured' : 'Local audit mode — AI provider not configured' ?></span>
             </div>
         </header>
 

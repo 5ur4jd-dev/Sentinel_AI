@@ -1,32 +1,32 @@
-/* Sentinel AI CSS Custom Stylesheet */
+/* Sentinel AI — quiet, neutral workspace theme */
 
 :root {
-    --bg-primary: #0b0f19;
-    --bg-secondary: #131a2e;
-    --bg-tertiary: #1b253f;
-    --accent: #2563eb;
-    --accent-hover: #3b82f6;
-    --accent-glow: rgba(37, 99, 235, 0.15);
+    --bg-primary: #f6f7f5;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f0f2ef;
+    --accent: #526477;
+    --accent-hover: #3e5063;
+    --accent-glow: rgba(82, 100, 119, 0.12);
     
-    --badge-accent: #f59e0b;
-    --badge-accent-bg: rgba(245, 158, 11, 0.1);
+    --badge-accent: #a56f27;
+    --badge-accent-bg: #fbf3e5;
     
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-tertiary: #64748b;
+    --text-primary: #263238;
+    --text-secondary: #6d777d;
+    --text-tertiary: #9aa3a8;
     
-    --border: #1e293b;
+    --border: #e2e6e3;
     
-    --status-new: #38bdf8;
-    --status-new-bg: rgba(56, 189, 248, 0.1);
-    --status-analyzing: #fb7185;
-    --status-analyzing-bg: rgba(251, 113, 133, 0.1);
-    --status-qualified: #34d399;
-    --status-qualified-bg: rgba(52, 211, 153, 0.1);
-    --status-sent: #a78bfa;
-    --status-sent-bg: rgba(167, 139, 250, 0.1);
-    --status-conversation: #f472b6;
-    --status-conversation-bg: rgba(244, 114, 182, 0.1);
+    --status-new: #607d8b;
+    --status-new-bg: #edf2f4;
+    --status-analyzing: #ad6d6d;
+    --status-analyzing-bg: #f8eeee;
+    --status-qualified: #5f806e;
+    --status-qualified-bg: #edf5ef;
+    --status-sent: #70758b;
+    --status-sent-bg: #f0f1f7;
+    --status-conversation: #8b6f7c;
+    --status-conversation-bg: #f5eff2;
 }
 
 body {
@@ -61,10 +61,10 @@ body {
 
 .logo-icon {
     font-size: 2.8rem;
-    background: linear-gradient(135deg, var(--accent), #6366f1);
+    background: var(--accent);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 12px var(--accent-glow));
+    filter: none;
 }
 
 .app-header h1 {
@@ -73,9 +73,7 @@ body {
     font-weight: 800;
     margin: 0;
     letter-spacing: -0.5px;
-    background: linear-gradient(to right, #ffffff, #cbd5e1);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
 }
 
 .subtitle {
@@ -95,7 +93,7 @@ body {
     align-items: center;
     gap: 8px;
     font-size: 0.85rem;
-    background: var(--bg-secondary);
+    background: #f9faf9;
     padding: 6px 14px;
     border-radius: 9999px;
     border: 1px solid var(--border);
@@ -105,9 +103,9 @@ body {
 .pulse-dot {
     width: 8px;
     height: 8px;
-    background: #34d399;
+    background: #78907f;
     border-radius: 50%;
-    box-shadow: 0 0 8px #34d399;
+    box-shadow: 0 0 0 3px #e5eee8;
     animation: pulse 2s infinite;
 }
 
@@ -132,12 +130,12 @@ body {
 
 .stat-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 24px rgba(38, 50, 56, 0.06);
 }
 
 .stat-card.highlight {
     border-color: var(--accent);
-    background: linear-gradient(185deg, var(--bg-secondary), var(--accent-glow));
+    background: #fbfcfb;
 }
 
 .stat-icon {
@@ -257,7 +255,7 @@ body {
 }
 
 .button-accent {
-    background: linear-gradient(135deg, var(--badge-accent), #f97316);
+    background: #b8874d;
     border: none;
 }
 
@@ -297,7 +295,7 @@ body {
 .logs-list li {
     margin-bottom: 10px;
     color: var(--text-secondary);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid #eef0ee;
     padding-bottom: 6px;
 }
 
@@ -439,18 +437,18 @@ tbody td {
 }
 
 .score-high {
-    background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    background: #edf5ef;
+    color: #5f806e;
 }
 
 .score-medium {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    background: #fbf3e5;
+    color: #a56f27;
 }
 
 .score-low {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
+    background: #f8eeee;
+    color: #ad6d6d;
 }
 
 .status-pill {
@@ -549,7 +547,8 @@ tbody td {
 }
 
 .chat-prospect {
-    background: var(--accent);
+    background: #dfe7e2;
+    color: var(--text-primary);
     align-self: flex-end;
 }
 
@@ -558,12 +557,12 @@ tbody td {
     font-weight: 700;
     text-transform: uppercase;
     margin-bottom: 4px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--text-secondary);
 }
 
 .bubble-time {
     font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-tertiary);
     text-align: right;
     margin-top: 6px;
 }

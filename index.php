@@ -2,6 +2,20 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/Leads/LeadModel.php';
+
+$landingLeads = [];
+$landingStats = ['discovered' => 0, 'audited' => 0, 'qualified' => 0];
+try {
+    $landingModel = new LeadModel();
+    $landingLeads = array_slice($landingModel->getAll(), 0, 3);
+    $landingStats['discovered'] = count($landingModel->getAll());
+    $landingStats['audited'] = (int)Database::getConnection()->query("SELECT COUNT(*) FROM audits WHERE status = 'Complete'")->fetchColumn();
+    $landingStats['qualified'] = (int)Database::getConnection()->query("SELECT COUNT(*) FROM leads WHERE status = 'Qualified'")->fetchColumn();
+} catch (Throwable $exception) {
+    // The landing page remains useful as a setup page when PHP extensions are missing.
+}
+
 $dashboardUrl = 'public/index.php';
 ?>
 <!DOCTYPE html>
@@ -13,13 +27,13 @@ $dashboardUrl = 'public/index.php';
     <title>Sentinel AI — Real prospecting, less guesswork</title>
     <style>
         :root {
-            --ink: #101828;
-            --muted: #667085;
-            --line: #e4e7ec;
-            --blue: #2563eb;
-            --blue-dark: #1d4ed8;
-            --soft-blue: #eff6ff;
-            --green: #12b76a;
+            --ink: #263238;
+            --muted: #6d777d;
+            --line: #e2e6e3;
+            --blue: #526477;
+            --blue-dark: #3e5063;
+            --soft-blue: #eef2f2;
+            --green: #718a79;
             --white: #ffffff;
         }
 
@@ -27,7 +41,7 @@ $dashboardUrl = 'public/index.php';
         body {
             margin: 0;
             color: var(--ink);
-            background: #fbfdff;
+            background: #f6f7f5;
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
         a { color: inherit; text-decoration: none; }
@@ -42,7 +56,7 @@ $dashboardUrl = 'public/index.php';
         .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: -.03em; font-size: 1.2rem; }
         .brand-mark {
             width: 38px; height: 38px; display: grid; place-items: center;
-            color: var(--white); background: var(--ink); border-radius: 12px; font-size: 1.1rem;
+            color: var(--white); background: #526477; border-radius: 12px; font-size: 1.1rem;
         }
         .nav-links { display: flex; align-items: center; gap: 26px; color: var(--muted); font-size: .92rem; }
         .nav-links a:hover { color: var(--ink); }
@@ -52,7 +66,7 @@ $dashboardUrl = 'public/index.php';
             border: 1px solid transparent; transition: transform .2s, background .2s;
         }
         .button:hover { transform: translateY(-2px); }
-        .button-primary { color: var(--white); background: var(--blue); box-shadow: 0 10px 22px rgba(37, 99, 235, .2); }
+        .button-primary { color: var(--white); background: var(--blue); box-shadow: 0 8px 18px rgba(82, 100, 119, .16); }
         .button-primary:hover { background: var(--blue-dark); }
         .button-light { color: var(--ink); border-color: var(--line); background: var(--white); }
         .hero { padding: 84px 0 72px; display: grid; grid-template-columns: 1.05fr .95fr; gap: 72px; align-items: center; }
@@ -63,11 +77,11 @@ $dashboardUrl = 'public/index.php';
         .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
         .proof { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 28px; color: var(--muted); font-size: .86rem; }
         .proof strong { color: var(--ink); }
-        .dashboard-card { position: relative; padding: 18px; border: 1px solid #dbe5f3; border-radius: 24px; background: var(--white); box-shadow: 0 25px 70px rgba(16, 24, 40, .12); transform: rotate(1.5deg); }
+        .dashboard-card { position: relative; padding: 18px; border: 1px solid var(--line); border-radius: 20px; background: var(--white); box-shadow: 0 20px 55px rgba(38, 50, 56, .08); transform: rotate(1.5deg); }
         .window-bar { display: flex; gap: 6px; padding: 5px 0 16px; }
         .window-bar i { width: 9px; height: 9px; border-radius: 50%; background: #d0d5dd; }
         .window-bar i:first-child { background: #f97066; } .window-bar i:nth-child(2) { background: #fdb022; } .window-bar i:nth-child(3) { background: #32d583; }
-        .mini-header { display: flex; justify-content: space-between; align-items: center; padding: 14px; background: #f8fafc; border-radius: 15px; }
+        .mini-header { display: flex; justify-content: space-between; align-items: center; padding: 14px; background: #f0f2ef; border-radius: 12px; }
         .mini-logo { font-weight: 800; } .mini-status { color: var(--green); font-size: .75rem; font-weight: 700; }
         .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
         .metric { padding: 14px; border: 1px solid var(--line); border-radius: 14px; } .metric small { color: var(--muted); display: block; font-size: .68rem; } .metric strong { display: block; margin-top: 7px; font-size: 1.5rem; }
@@ -78,7 +92,7 @@ $dashboardUrl = 'public/index.php';
         .section-heading { max-width: 620px; margin-bottom: 30px; } .section-heading h2 { margin: 12px 0; font-size: clamp(2rem, 4vw, 3.2rem); letter-spacing: -.055em; } .section-heading p { color: var(--muted); line-height: 1.65; }
         .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
         .card { padding: 25px; border: 1px solid var(--line); border-radius: 18px; background: var(--white); } .card-icon { font-size: 1.6rem; } .card h3 { margin: 20px 0 8px; } .card p { color: var(--muted); line-height: 1.6; font-size: .94rem; }
-        .cta { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 34px; border-radius: 22px; background: var(--ink); color: var(--white); } .cta h2 { margin: 0 0 8px; letter-spacing: -.04em; } .cta p { margin: 0; color: #c8d0dc; line-height: 1.5; } .cta .button { background: var(--white); color: var(--ink); }
+        .cta { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 34px; border-radius: 18px; background: #e9edeb; color: var(--ink); } .cta h2 { margin: 0 0 8px; letter-spacing: -.04em; } .cta p { margin: 0; color: var(--muted); line-height: 1.5; } .cta .button { background: var(--white); color: var(--ink); }
         .footer { display: flex; justify-content: space-between; gap: 20px; padding: 26px 0 34px; color: var(--muted); font-size: .84rem; border-top: 1px solid var(--line); }
         @media (max-width: 820px) { .nav-links a:not(.button) { display: none; } .hero { grid-template-columns: 1fr; gap: 40px; padding-top: 55px; } .dashboard-card { transform: none; } .cards { grid-template-columns: 1fr; } .cta { flex-direction: column; align-items: flex-start; } }
         @media (max-width: 520px) { .nav, .hero, .section, .footer { width: min(100% - 28px, 1160px); } h1 { font-size: 3.2rem; } .metrics { grid-template-columns: 1fr; } .footer { flex-direction: column; } }
@@ -109,9 +123,9 @@ $dashboardUrl = 'public/index.php';
                 </div>
                 <div class="dashboard-card" aria-label="Sentinel AI dashboard preview">
                     <div class="window-bar"><i></i><i></i><i></i></div>
-                    <div class="mini-header"><span class="mini-logo">Sentinel AI</span><span class="mini-status">● Research active</span></div>
-                    <div class="metrics"><div class="metric"><small>Leads found</small><strong>24</strong></div><div class="metric"><small>Audited</small><strong>18</strong></div><div class="metric"><small>Qualified</small><strong>07</strong></div></div>
-                    <div class="pipeline"><div class="pipeline-title"><span>Priority prospects</span><span style="color:#667085">Today</span></div><div class="lead"><div><strong>Northstar Dental</strong><br><span>Website opportunity detected</span></div><div class="score">92</div><div><strong>Harbor & Co.</strong><br><span>Contact path needs work</span></div><div class="score">84</div><div><strong>Atlas Fitness</strong><br><span>Local SEO opportunity</span></div><div class="score">78</div></div></div>
+                    <div class="mini-header"><span class="mini-logo">Sentinel AI</span><span class="mini-status">● Connected workspace</span></div>
+                    <div class="metrics"><div class="metric"><small>Leads found</small><strong><?= $landingStats['discovered'] ?></strong></div><div class="metric"><small>Audited</small><strong><?= $landingStats['audited'] ?></strong></div><div class="metric"><small>Qualified</small><strong><?= $landingStats['qualified'] ?></strong></div></div>
+                    <div class="pipeline"><div class="pipeline-title"><span>Recent prospects</span><span style="color:#667085">Live data</span></div><?php if ($landingLeads): ?><?php foreach ($landingLeads as $landingLead): ?><div class="lead"><div><strong><?= htmlspecialchars($landingLead['business_name']) ?></strong><br><span><?= htmlspecialchars($landingLead['status']) ?></span></div><div class="score"><?= (int)$landingLead['score'] ?></div></div><?php endforeach; ?><?php else: ?><div class="lead"><div><strong>No prospects yet</strong><br><span>Run a research cycle from the dashboard.</span></div><div class="score">—</div></div><?php endif; ?></div>
                 </div>
             </section>
 

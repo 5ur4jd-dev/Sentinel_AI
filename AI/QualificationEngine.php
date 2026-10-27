@@ -63,7 +63,8 @@ class QualificationEngine
                 'budget_potential' => 'Unknown',
                 'estimated_tech_stack' => [],
                 'decision_maker_role' => 'Business Owner / Marketing Lead',
-                'outreach_strategy' => 'Review the evidence-backed website findings with the owner before proposing a fix.'
+                'outreach_strategy' => 'Review the evidence-backed website findings with the owner before proposing a fix.',
+                'scoring_method' => 'local_audit'
             ];
         }
 

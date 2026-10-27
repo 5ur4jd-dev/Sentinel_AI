@@ -84,7 +84,7 @@ class DiscoveryEngine
                 'contact_email' => $biz['contact_email'] ?? '',
                 'contact_phone' => $biz['contact_phone'] ?? '',
                 'notes' => $biz['notes'] ?? '',
-                'source' => 'AI discovery',
+                'source' => 'AI discovery: ' . $sourceUrl,
                 'status' => 'New',
                 'industry' => $biz['industry'] ?? $industry,
                 'location' => $biz['location'] ?? $location,
